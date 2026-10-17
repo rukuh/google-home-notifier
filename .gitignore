@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Generated audio and temporary files
+static/
+*.mp3
+
+# System & IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp

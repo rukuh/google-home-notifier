@@ -1,0 +1,4 @@
+Flask==3.0.2
+gTTS==2.5.1
+PyChromecast==13.1.0
+gunicorn==21.2.0
