@@ -14,21 +14,35 @@ import zeroconf
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-# Initialize a global, persistent Zeroconf instance to share across pychromecast calls
-try:
-    ZCONF = zeroconf.Zeroconf()
-except Exception as e:
-    logger.error(f"Failed to initialize global Zeroconf: {e}")
-    ZCONF = None
+# Global Zeroconf instance, lazily instantiated per worker process
+ZCONF = None
+
+def get_zeroconf():
+    global ZCONF
+    if ZCONF is None or not getattr(ZCONF, 'loop', None) or not ZCONF.loop.is_running():
+        try:
+            if ZCONF:
+                try:
+                    ZCONF.close()
+                except Exception:
+                    pass
+            ZCONF = zeroconf.Zeroconf()
+        except Exception as e:
+            logger.error(f"Failed to initialize Zeroconf: {e}")
+            ZCONF = None
+    return ZCONF
 
 @atexit.register
 def cleanup_zeroconf():
+    global ZCONF
     if ZCONF:
         try:
             ZCONF.close()
             logger.info("Closed global Zeroconf instance.")
         except Exception as e:
             logger.error(f"Error closing global Zeroconf: {e}")
+        finally:
+            ZCONF = None
 
 app = Flask(__name__)
 
@@ -62,6 +76,8 @@ def get_chromecast_device(speaker_name=None, speaker_ip=None):
     """
     Finds and connects to a Chromecast device.
     """
+    zconf = get_zeroconf()
+
     # 1. Connect by IP if provided
     ip_to_use = speaker_ip or CHROMECAST_IP
     name_to_use = speaker_name or CHROMECAST_NAME
@@ -70,7 +86,7 @@ def get_chromecast_device(speaker_name=None, speaker_ip=None):
         chromecasts, browser = pychromecast.get_listed_chromecasts(
             friendly_names=[name_to_use] if name_to_use else None,
             known_hosts=[ip_to_use],
-            zeroconf_instance=ZCONF
+            zeroconf_instance=zconf
         )
         if chromecasts:
             cast = chromecasts[0]
@@ -85,7 +101,7 @@ def get_chromecast_device(speaker_name=None, speaker_ip=None):
         logger.info(f"Discovering Chromecast with name: {name_to_use}")
         chromecasts, browser = pychromecast.get_listed_chromecasts(
             friendly_names=[name_to_use],
-            zeroconf_instance=ZCONF
+            zeroconf_instance=zconf
         )
         if chromecasts:
             cast = chromecasts[0]
@@ -105,7 +121,7 @@ def get_chromecast_device(speaker_name=None, speaker_ip=None):
         def update_cast(self, uuid, service):
             pass
 
-    browser = pychromecast.CastBrowser(SimpleListener(), ZCONF)
+    browser = pychromecast.CastBrowser(SimpleListener(), zconf)
     browser.start_discovery()
     # Wait for discovery to run
     time.sleep(5.0)
@@ -117,7 +133,7 @@ def get_chromecast_device(speaker_name=None, speaker_ip=None):
         logger.info(f"Found Chromecast '{cast_info.friendly_name}'. Connecting...")
         chromecasts, browser2 = pychromecast.get_listed_chromecasts(
             uuids=[uuid],
-            zeroconf_instance=ZCONF
+            zeroconf_instance=zconf
         )
         if chromecasts:
             cast = chromecasts[0]
